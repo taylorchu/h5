@@ -120,10 +120,13 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 		io.WriteString(w, strings.Repeat(indentWith, level*width))
 		io.WriteString(w, "<"+n.Data)
 		for _, a := range n.Attr {
-			io.WriteString(w, " "+a.Key+"=\""+a.Val+"\"")
+			io.WriteString(w, " "+a.Key)
+			if a.Val != "" {
+				io.WriteString(w, "=\""+a.Val+"\"")
+			}
 		}
 		if voidElements[n.Data] {
-			io.WriteString(w, "/>\n")
+			io.WriteString(w, " />\n")
 			return
 		}
 		io.WriteString(w, ">")
