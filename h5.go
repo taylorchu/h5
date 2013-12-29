@@ -2,10 +2,16 @@ package main
 
 import (
 	"code.google.com/p/go.net/html"
+	"flag"
 	"io"
 	"log"
 	"os"
 	"strings"
+)
+
+var (
+	IndentWidth = flag.Int("w", 4, "Number of space or tab to indent")
+	UseTab      = flag.Bool("t", false, "Use tab indent")
 )
 
 func Traverse(n *html.Node, callback func(*html.Node)) {
@@ -93,7 +99,7 @@ func ShouldIndent(n *html.Node) bool {
 func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level int) {
 	switch n.Type {
 	case html.CommentNode:
-		io.WriteString(w, strings.Repeat(indentWith, level*width) + "<!--" + n.Data + "-->\n")
+		io.WriteString(w, strings.Repeat(indentWith, level*width)+"<!--"+n.Data+"-->\n")
 	case html.DoctypeNode:
 		io.WriteString(w, "<!DOCTYPE html>\n")
 	case html.TextNode:
@@ -148,10 +154,18 @@ func Render(n *html.Node, w io.Writer, indentWith string, width int) {
 }
 
 func main() {
+	flag.Parse()
 	doc, err := SmartParse(os.Stdin)
 	if err != nil {
 		log.Fatal(err)
 	}
-	Render(doc, os.Stdout, " ", 4)
+	indentString := " "
+	if *UseTab {
+		indentString = "\t"
+	}
+	if *IndentWidth <= 0 {
+		log.Fatal("width should be positive")
+	}
+	Render(doc, os.Stdout, indentString, *IndentWidth)
 	//html.Render(os.Stdout, doc)
 }
