@@ -90,10 +90,28 @@ var voidElements = map[string]bool{
 }
 
 func ShouldIndent(n *html.Node) bool {
-	// has more than one node, or is not text node
-	// or its only grandchildren is not text node
-	return n.FirstChild != nil &&
-		(n.FirstChild.Type != html.TextNode || n.FirstChild.NextSibling != nil)
+	// no child, no indent
+	if n.FirstChild == nil {
+		return false
+	}
+	// indent script is probably a good idea
+	if n.Data == "script" {
+		return true
+	}
+
+	if n.FirstChild.NextSibling == nil {
+		// only child is text node, no indent
+		if n.FirstChild.Type == html.TextNode {
+			return false
+		} else {
+			// only grand child is text node, no indent
+			if n.FirstChild.FirstChild != nil && n.FirstChild.FirstChild.NextSibling == nil &&
+				n.FirstChild.FirstChild.Type == html.TextNode {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level int) {
@@ -103,21 +121,18 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 	case html.DoctypeNode:
 		io.WriteString(w, "<!DOCTYPE html>\n")
 	case html.TextNode:
-		alone := true
-		// script is an exception
-		if n.PrevSibling == nil && n.NextSibling == nil && n.Parent.Data != "script" {
-			alone = false
-		}
-		if alone {
+		if ShouldIndent(n.Parent) {
 			io.WriteString(w, strings.Repeat(indentWith, level*width))
 		}
 		io.WriteString(w, n.Data)
-		if alone {
+		if ShouldIndent(n.Parent) {
 			io.WriteString(w, "\n")
 		}
 
 	case html.ElementNode:
-		io.WriteString(w, strings.Repeat(indentWith, level*width))
+		if ShouldIndent(n.Parent) {
+			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		}
 		io.WriteString(w, "<"+n.Data)
 		for _, a := range n.Attr {
 			io.WriteString(w, " "+a.Key)
@@ -126,12 +141,15 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 			}
 		}
 		if voidElements[n.Data] {
-			io.WriteString(w, " />\n")
+			io.WriteString(w, " />")
+			if ShouldIndent(n.Parent) {
+				io.WriteString(w, "\n")
+			}
 			return
 		}
 		io.WriteString(w, ">")
 		// script is exception as we'll always indent
-		if ShouldIndent(n) || (n.Data == "script" && n.FirstChild != nil) {
+		if ShouldIndent(n) {
 			io.WriteString(w, "\n")
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -141,10 +159,13 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 				IndentPrint(c, w, indentWith, width, level+1)
 			}
 		}
-		if ShouldIndent(n) || (n.Data == "script" && n.FirstChild != nil) {
+		if ShouldIndent(n) {
 			io.WriteString(w, strings.Repeat(indentWith, level*width))
 		}
-		io.WriteString(w, "</"+n.Data+">\n")
+		io.WriteString(w, "</"+n.Data+">")
+		if ShouldIndent(n.Parent) {
+			io.WriteString(w, "\n")
+		}
 	case html.DocumentNode:
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			IndentPrint(c, w, indentWith, width, level)
