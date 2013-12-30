@@ -54,11 +54,9 @@ func Clean(root *html.Node) {
 	Traverse(root, func(n *html.Node) {
 		toRemove := []*html.Node{}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.TextNode {
-				c.Data = strings.TrimSpace(c.Data)
-				if c.Data == "" {
-					toRemove = append(toRemove, c)
-				}
+			c.Data = strings.TrimSpace(c.Data)
+			if c.Data == "" {
+				toRemove = append(toRemove, c)
 			}
 		}
 		for _, c := range toRemove {
@@ -117,7 +115,13 @@ func ShouldIndent(n *html.Node) bool {
 func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level int) {
 	switch n.Type {
 	case html.CommentNode:
-		io.WriteString(w, strings.Repeat(indentWith, level*width)+"<!--"+n.Data+"-->\n")
+		if ShouldIndent(n.Parent) {
+			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		}
+		io.WriteString(w, "<!-- "+n.Data+" -->")
+		if ShouldIndent(n.Parent) {
+			io.WriteString(w, "\n")
+		}
 	case html.DoctypeNode:
 		io.WriteString(w, "<!DOCTYPE html>\n")
 	case html.TextNode:
