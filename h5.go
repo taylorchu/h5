@@ -28,14 +28,20 @@ func IsPartial(n *html.Node) bool {
 		n.FirstChild.FirstChild != nil && n.FirstChild.FirstChild.Data == "head" && // html only has head and body
 		n.FirstChild.FirstChild.NextSibling != nil && n.FirstChild.FirstChild.NextSibling.Data == "body" &&
 		n.FirstChild.FirstChild.NextSibling.NextSibling == nil &&
-		n.FirstChild.FirstChild.FirstChild == nil // head is empty
+		(n.FirstChild.FirstChild.FirstChild == nil || n.FirstChild.FirstChild.NextSibling.FirstChild == nil) // head or body is empty
 }
 
 func Root(n *html.Node) *html.Node {
 	if IsPartial(n) {
-		body := n.FirstChild.FirstChild.NextSibling
-		body.Type = html.DocumentNode
-		return body
+		head := n.FirstChild.FirstChild
+		if head.FirstChild == nil {
+			// body
+			head.NextSibling.Type = html.DocumentNode
+			return head.NextSibling
+		} else {
+			head.Type = html.DocumentNode
+			return head
+		}
 	}
 	return n
 }
@@ -50,11 +56,22 @@ func SmartParse(r io.Reader) (*html.Node, error) {
 	return root, err
 }
 
+func CleanNodeText(s string) string {
+	ret := []string{}
+	for _, line := range strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			ret = append(ret, trimmed)
+		}
+	}
+	return strings.Join(ret, "\n")
+}
+
 func Clean(root *html.Node) {
 	Traverse(root, func(n *html.Node) {
 		toRemove := []*html.Node{}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			c.Data = strings.TrimSpace(c.Data)
+			c.Data = CleanNodeText(c.Data)
 			if c.Data == "" {
 				toRemove = append(toRemove, c)
 			}
@@ -87,55 +104,92 @@ var voidElements = map[string]bool{
 	"wbr":     true,
 }
 
+func IsInline(n *html.Node) bool {
+	return !strings.Contains(n.Data, "\n")
+}
+
+func IsTextNode(n *html.Node) bool {
+	return n.Type == html.TextNode || n.Type == html.CommentNode
+}
+
+func IsInlineTextNode(n *html.Node) bool {
+	return IsTextNode(n) && IsInline(n)
+}
+
 func ShouldIndent(n *html.Node) bool {
+	if n == nil {
+		return false
+	}
+	// inline text node
+	if IsTextNode(n) && !IsInline(n) {
+		return true
+	}
 	// no child, no indent
 	if n.FirstChild == nil {
 		return false
 	}
-	// indent script is probably a good idea
-	if n.Data == "script" {
-		return true
-	}
-
 	if n.FirstChild.NextSibling == nil {
-		// only child is text node, no indent
-		if n.FirstChild.Type == html.TextNode {
+		// only child is inline text node, no indent
+		if IsInlineTextNode(n.FirstChild) {
 			return false
-		} else {
-			// only grand child is text node, no indent
-			if n.FirstChild.FirstChild != nil && n.FirstChild.FirstChild.NextSibling == nil &&
-				n.FirstChild.FirstChild.Type == html.TextNode {
-				return false
-			}
+		}
+		// only grand child is inline text node, no indent
+		if n.FirstChild.FirstChild != nil && n.FirstChild.FirstChild.NextSibling == nil &&
+			IsInlineTextNode(n.FirstChild.FirstChild) {
+			return false
 		}
 	}
 	return true
 }
 
 func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level int) {
+	parentIndent := ShouldIndent(n.Parent)
+	indent := ShouldIndent(n)
+	space := strings.Repeat(indentWith, level*width)
 	switch n.Type {
 	case html.CommentNode:
-		if ShouldIndent(n.Parent) {
-			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		if parentIndent {
+			io.WriteString(w, space)
 		}
-		io.WriteString(w, "<!-- "+n.Data+" -->")
-		if ShouldIndent(n.Parent) {
+		io.WriteString(w, "<!--")
+		if indent {
+			io.WriteString(w, "\n")
+		} else {
+			io.WriteString(w, " ")
+		}
+		for _, line := range strings.Split(n.Data, "\n") {
+			if indent {
+				io.WriteString(w, space)
+			}
+			io.WriteString(w, line)
+			if indent {
+				io.WriteString(w, "\n")
+			}
+		}
+		if indent {
+			io.WriteString(w, space)
+		} else {
+			io.WriteString(w, " ")
+		}
+		io.WriteString(w, "-->")
+		if parentIndent {
 			io.WriteString(w, "\n")
 		}
 	case html.DoctypeNode:
 		io.WriteString(w, "<!DOCTYPE html>\n")
 	case html.TextNode:
-		if ShouldIndent(n.Parent) {
-			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		for _, line := range strings.Split(n.Data, "\n") {
+			if parentIndent {
+				io.WriteString(w, space)
+			}
+			io.WriteString(w, line)
+			if parentIndent {
+				io.WriteString(w, "\n")
+			}
 		}
-		io.WriteString(w, n.Data)
-		if ShouldIndent(n.Parent) {
-			io.WriteString(w, "\n")
-		}
-
 	case html.ElementNode:
-		if ShouldIndent(n.Parent) {
-			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		if parentIndent {
+			io.WriteString(w, space)
 		}
 		io.WriteString(w, "<"+n.Data)
 		for _, a := range n.Attr {
@@ -146,14 +200,13 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 		}
 		if voidElements[n.Data] {
 			io.WriteString(w, " />")
-			if ShouldIndent(n.Parent) {
+			if parentIndent {
 				io.WriteString(w, "\n")
 			}
 			return
 		}
 		io.WriteString(w, ">")
-		// script is exception as we'll always indent
-		if ShouldIndent(n) {
+		if indent {
 			io.WriteString(w, "\n")
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -163,11 +216,11 @@ func IndentPrint(n *html.Node, w io.Writer, indentWith string, width int, level 
 				IndentPrint(c, w, indentWith, width, level+1)
 			}
 		}
-		if ShouldIndent(n) {
-			io.WriteString(w, strings.Repeat(indentWith, level*width))
+		if indent {
+			io.WriteString(w, space)
 		}
 		io.WriteString(w, "</"+n.Data+">")
-		if ShouldIndent(n.Parent) {
+		if parentIndent {
 			io.WriteString(w, "\n")
 		}
 	case html.DocumentNode:
