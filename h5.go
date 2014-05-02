@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"code.google.com/p/go.net/html"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -72,6 +75,19 @@ func Clean(root *html.Node) {
 		toRemove := []*html.Node{}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			c.Data = CleanNodeText(c.Data)
+			// uglifyjs
+			if n.Data == "script" {
+				cmd := exec.Command("uglifyjs", "-b")
+				cmd.Stdin = strings.NewReader(c.Data)
+				var out bytes.Buffer
+				cmd.Stdout = &out
+				err := cmd.Run()
+				if err != nil {
+					fmt.Println("cannot run uglifyjs")
+				} else {
+					c.Data = out.String()
+				}
+			}
 			if c.Data == "" {
 				toRemove = append(toRemove, c)
 			}
