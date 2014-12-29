@@ -9,11 +9,5 @@ Unlike HTML tidy (its html5 version is still in early stage), this one is usable
 	html5 < input.html > output.html	
 ```
 
-# option
-
-```
-	-t: use tab
-	-w=4: width
-```
-
-it will try to tranform input into *xhtml5*, which is stricter than html5.
+# version 2.0
+* a big refactor from older version
