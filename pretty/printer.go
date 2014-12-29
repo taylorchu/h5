@@ -40,7 +40,6 @@ func print(w io.Writer, n Node, depth int) {
 	for _, line := range lines {
 		if !inline {
 			if start != "" {
-
 				io.WriteString(w, repeat2)
 			} else {
 				io.WriteString(w, repeat)
